@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/probes/">
+    <Project Path="probes/Mone.Plugins.Probes.Ping/Mone.Plugins.Probes.Ping.csproj" />
+    <Project Path="probes/Mone.Plugins.Probes.Https/Mone.Plugins.Probes.Https.csproj" />
+    <Project Path="probes/Mone.Plugins.Probes.Webhook/Mone.Plugins.Probes.Webhook.csproj" />
+    <Project Path="probes/Mone.Plugins.Probes.Syslog/Mone.Plugins.Probes.Syslog.csproj" />
+    <Project Path="probes/Mone.Plugins.Probes.SnmpTrap/Mone.Plugins.Probes.SnmpTrap.csproj" />
+  </Folder>
+  <Folder Name="/checkers/">
+    <Project Path="checkers/Mone.Plugins.Checkers.ThresholdChecker/Mone.Plugins.Checkers.ThresholdChecker.csproj" />
+    <Project Path="checkers/Mone.Plugins.Checkers.ValueChecker/Mone.Plugins.Checkers.ValueChecker.csproj" />
+  </Folder>
+  <Folder Name="/notifications/">
+    <Project Path="notifications/Mone.Plugins.Notifications.Email/Mone.Plugins.Notifications.Email.csproj" />
+    <Project Path="notifications/Mone.Plugins.Notifications.Slack/Mone.Plugins.Notifications.Slack.csproj" />
+    <Project Path="notifications/Mone.Plugins.Notifications.Teams/Mone.Plugins.Notifications.Teams.csproj" />
+    <Project Path="notifications/Mone.Plugins.Notifications.Webhook/Mone.Plugins.Notifications.Webhook.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mone.Plugins.Tests/Mone.Plugins.Tests.csproj" />
+  </Folder>
+</Solution>

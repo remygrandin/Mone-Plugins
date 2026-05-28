@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Mone\src\Mone.Contracts\Mone.Contracts.csproj" />
+    <ProjectReference Include="..\..\probes\Mone.Plugins.Probes.Ping\Mone.Plugins.Probes.Ping.csproj" />
+    <ProjectReference Include="..\..\probes\Mone.Plugins.Probes.Https\Mone.Plugins.Probes.Https.csproj" />
+    <ProjectReference Include="..\..\probes\Mone.Plugins.Probes.Webhook\Mone.Plugins.Probes.Webhook.csproj" />
+    <ProjectReference Include="..\..\probes\Mone.Plugins.Probes.Syslog\Mone.Plugins.Probes.Syslog.csproj" />
+    <ProjectReference Include="..\..\probes\Mone.Plugins.Probes.SnmpTrap\Mone.Plugins.Probes.SnmpTrap.csproj" />
+    <ProjectReference Include="..\..\checkers\Mone.Plugins.Checkers.ThresholdChecker\Mone.Plugins.Checkers.ThresholdChecker.csproj" />
+    <ProjectReference Include="..\..\checkers\Mone.Plugins.Checkers.ValueChecker\Mone.Plugins.Checkers.ValueChecker.csproj" />
+    <ProjectReference Include="..\..\notifications\Mone.Plugins.Notifications.Email\Mone.Plugins.Notifications.Email.csproj" />
+    <ProjectReference Include="..\..\notifications\Mone.Plugins.Notifications.Slack\Mone.Plugins.Notifications.Slack.csproj" />
+    <ProjectReference Include="..\..\notifications\Mone.Plugins.Notifications.Teams\Mone.Plugins.Notifications.Teams.csproj" />
+    <ProjectReference Include="..\..\notifications\Mone.Plugins.Notifications.Webhook\Mone.Plugins.Notifications.Webhook.csproj" />
+  </ItemGroup>
+
+</Project>
