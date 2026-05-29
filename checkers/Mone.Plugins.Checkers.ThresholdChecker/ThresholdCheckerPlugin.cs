@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Mone.Contracts.Models;
 using Mone.Contracts.Plugins;
@@ -13,7 +14,7 @@ public enum ComparisonMode
     NotEqual
 }
 
-[CheckerPlugin(CheckerMode = CheckerMode.Stream)]
+[CheckerPlugin(InvocationMode = CheckerInvocationMode.OnProbeResult)]
 public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
 {
     public ConfigManifest GetConfigManifest() => new()
@@ -29,14 +30,21 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
         ]
     };
     public string Name => "ThresholdChecker";
-    public Version Version => new(1, 1, 0);
+    public Version Version => new(1, 2, 0);
     public string Description => "Evaluates numeric probe metrics against configurable warning/critical thresholds with optional sustain conditions";
-    public CheckerMode CheckerMode => CheckerMode.Stream;
+    public CheckerInvocationMode InvocationMode => CheckerInvocationMode.OnProbeResult;
+    public TimeSpan? Interval => null;
 
     private string? _metricKey;
     private double _warningThreshold;
     private double _criticalThreshold;
     private ComparisonMode _comparisonMode;
+    private int _sustainEntries;
+    private int _sustainMinutes;
+
+    private readonly ConcurrentDictionary<string, PendingBreach> _pending = new();
+
+    private sealed record PendingBreach(MonitoringStatus Status, int ConsecutiveCount, DateTimeOffset FirstSeen);
 
     public Task InitializeAsync(IPluginContext context)
     {
@@ -57,19 +65,94 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
             ? parsed
             : ComparisonMode.GreaterThan;
 
+        _sustainEntries = config.TryGetValue("SustainEntries", out var se)
+            && int.TryParse(se, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seVal)
+            ? Math.Max(0, seVal)
+            : 0;
+
+        _sustainMinutes = config.TryGetValue("SustainMinutes", out var sm)
+            && int.TryParse(sm, NumberStyles.Integer, CultureInfo.InvariantCulture, out var smVal)
+            ? Math.Max(0, smVal)
+            : 0;
+
         return Task.CompletedTask;
     }
 
-    public Task<StatusChange> EvaluateAsync(string targetId, ProbeResult result, CancellationToken cancellationToken)
+    public async Task<StatusChange> EvaluateAsync(CheckerEvaluationContext context)
     {
-        var status = EvaluateStatus(result);
+        var triggering = context.TriggeringResult
+            ?? throw new InvalidOperationException(
+                "ThresholdChecker requires a triggering probe result (OnProbeResult mode)");
 
-        return Task.FromResult(new StatusChange(
-            targetId,
+        var evaluated = EvaluateStatus(triggering);
+        var effective = await ApplySustainAsync(context, triggering, evaluated);
+
+        return new StatusChange(
+            context.TargetId,
             MonitoringStatus.Unknown,
-            status,
-            result,
-            DateTimeOffset.UtcNow));
+            effective,
+            triggering,
+            DateTimeOffset.UtcNow);
+    }
+
+    private async Task<MonitoringStatus> ApplySustainAsync(
+        CheckerEvaluationContext context,
+        ProbeResult triggering,
+        MonitoringStatus evaluated)
+    {
+        if (_sustainEntries <= 0 && _sustainMinutes <= 0)
+            return evaluated;
+
+        if (evaluated == MonitoringStatus.Healthy)
+        {
+            _pending.TryRemove(context.TargetId, out _);
+            return evaluated;
+        }
+
+        if (_sustainEntries > 1)
+        {
+            var history = await context.History.GetRecentAsync(
+                context.TargetId,
+                _sustainEntries - 1,
+                context.TriggeringProbeId,
+                context.CancellationToken);
+
+            var consecutive = 1;
+            foreach (var record in history)
+            {
+                if (EvaluateStatus(record.Result) == evaluated)
+                    consecutive++;
+                else
+                    break;
+            }
+
+            if (consecutive < _sustainEntries)
+            {
+                Track(context.TargetId, evaluated, triggering.Timestamp);
+                return MonitoringStatus.Healthy;
+            }
+        }
+
+        if (_sustainMinutes > 0)
+        {
+            var pending = Track(context.TargetId, evaluated, triggering.Timestamp);
+            var elapsed = (triggering.Timestamp - pending.FirstSeen).TotalMinutes;
+            if (elapsed < _sustainMinutes)
+                return MonitoringStatus.Healthy;
+        }
+
+        _pending.TryRemove(context.TargetId, out _);
+        return evaluated;
+    }
+
+    private PendingBreach Track(string targetId, MonitoringStatus status, DateTimeOffset timestamp)
+    {
+        return _pending.AddOrUpdate(
+            targetId,
+            _ => new PendingBreach(status, 1, timestamp),
+            (_, existing) => existing.Status == status
+                ? existing with { ConsecutiveCount = existing.ConsecutiveCount + 1 }
+                : new PendingBreach(status, 1, timestamp));
     }
 
     private MonitoringStatus EvaluateStatus(ProbeResult result)
