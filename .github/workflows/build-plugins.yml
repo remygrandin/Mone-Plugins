@@ -1,0 +1,81 @@
+name: Build & publish plugins
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plugins-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Mone-Plugins
+        uses: actions/checkout@v4
+        with:
+          path: Mone-Plugins
+          fetch-depth: 0
+
+      - name: Checkout Mone (sibling, provides Mone.Contracts ProjectReference)
+        uses: actions/checkout@v4
+        with:
+          repository: remygrandin/Mone
+          path: Mone
+          ref: main
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore solution
+        working-directory: Mone-Plugins
+        run: dotnet restore Mone-Plugins.slnx
+
+      - name: Run tests
+        working-directory: Mone-Plugins
+        run: dotnet test Mone-Plugins.slnx --configuration Release --no-restore --logger "console;verbosity=minimal"
+
+      - name: Build & package plugins
+        working-directory: Mone-Plugins
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          GIT_SHA: ${{ github.sha }}
+          REPO_URL: https://github.com/${{ github.repository }}
+        run: bash .github/scripts/build-plugins.sh
+
+      - name: Publish release "latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest plugin build
+          body: |
+            Auto-built plugins from `${{ github.sha }}` (run #${{ github.run_number }}).
+
+            See `plugin-manifest.json` at the repo root for the canonical index consumed by Mone's `PluginRepositoryService`.
+          files: Mone-Plugins/dist/*.zip
+          make_latest: 'true'
+          fail_on_unmatched_files: true
+
+      - name: Commit manifest back to main
+        working-directory: Mone-Plugins
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- plugin-manifest.json; then
+            echo "plugin-manifest.json unchanged — skipping commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugin-manifest.json
+          git commit -m "chore(manifest): refresh for build #${{ github.run_number }} [skip ci]"
+          git push origin HEAD:main
