@@ -62,11 +62,13 @@ public class ConfigManifestTests
         var plugin = new ThresholdCheckerPlugin();
         var manifest = GetManifest(plugin);
 
-        Assert.Equal(4, manifest.Fields.Count);
+        Assert.Equal(6, manifest.Fields.Count);
         AssertField(manifest, "MetricKey", ConfigFieldType.String, required: true);
         AssertField(manifest, "WarningThreshold", ConfigFieldType.Double, required: false);
         AssertField(manifest, "CriticalThreshold", ConfigFieldType.Double, required: false);
         AssertField(manifest, "ComparisonMode", ConfigFieldType.Choice, required: false);
+        AssertField(manifest, "SustainEntries", ConfigFieldType.Integer, required: false);
+        AssertField(manifest, "SustainMinutes", ConfigFieldType.Integer, required: false);
     }
 
     [Fact]
