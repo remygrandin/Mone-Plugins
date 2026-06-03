@@ -23,6 +23,29 @@ public sealed class SyslogProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
 
     public Task InitializeAsync(IPluginContext context) => Task.CompletedTask;
 
+    public Task<IReadOnlyList<MetricDeclaration>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MetricDeclaration> metrics =
+        [
+            new MetricDeclaration("message_received", "Message received", null,
+                new Dictionary<double, string> { [0] = "Parse failed", [1] = "Received" }),
+            new MetricDeclaration("priority", "Syslog priority"),
+            new MetricDeclaration("severity_numeric", "Severity (numeric)", null,
+                new Dictionary<double, string>
+                {
+                    [0] = "Emergency",
+                    [1] = "Alert",
+                    [2] = "Critical",
+                    [3] = "Error",
+                    [4] = "Warning",
+                    [5] = "Notice",
+                    [6] = "Informational",
+                    [7] = "Debug",
+                }),
+        ];
+        return Task.FromResult(metrics);
+    }
+
     public Task<ProbeResult> ExecuteAsync(string targetId, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("Syslog is a passive UDP probe — use HandleDatagramAsync instead of ExecuteAsync.");
@@ -42,6 +65,7 @@ public sealed class SyslogProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
             sw.Stop();
             var errorMetadata = new Dictionary<string, object>
             {
+                ["message_received"] = 0,
                 ["raw_message"] = rawMessage,
                 ["remote_endpoint"] = remoteEndpoint.ToString(),
                 ["received_at"] = DateTimeOffset.UtcNow.ToString("O")
@@ -61,10 +85,12 @@ public sealed class SyslogProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
 
         var metadata = new Dictionary<string, object>
         {
+            ["message_received"] = 1,
             ["format"] = syslog.Format.ToString(),
             ["priority"] = syslog.Priority,
             ["facility"] = syslog.Facility.ToString(),
             ["severity"] = syslog.Severity.ToString(),
+            ["severity_numeric"] = (int)syslog.Severity,
             ["remote_endpoint"] = remoteEndpoint.ToString(),
             ["received_at"] = DateTimeOffset.UtcNow.ToString("O")
         };

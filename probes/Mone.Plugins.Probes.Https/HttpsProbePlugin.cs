@@ -82,6 +82,19 @@ public sealed class HttpsProbePlugin : IProbePlugin, IConfigurablePlugin
         return !_validateCertificate || sslPolicyErrors == SslPolicyErrors.None;
     }
 
+    public Task<IReadOnlyList<MetricDeclaration>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MetricDeclaration> metrics =
+        [
+            new MetricDeclaration("status_code", "HTTP status code"),
+            new MetricDeclaration("response_time_ms", "Response time", "ms"),
+            new MetricDeclaration("cert_days_remaining", "TLS cert days remaining", "d"),
+            new MetricDeclaration("cert_valid", "TLS cert validity", null,
+                new Dictionary<double, string> { [0] = "Invalid", [1] = "Valid" }),
+        ];
+        return Task.FromResult(metrics);
+    }
+
     public async Task<ProbeResult> ExecuteAsync(string targetId, CancellationToken cancellationToken)
     {
         _capturedCert = null;
@@ -102,11 +115,13 @@ public sealed class HttpsProbePlugin : IProbePlugin, IConfigurablePlugin
 
             if (_capturedCert is not null)
             {
+                var daysRemaining = (_capturedCert.NotAfter - DateTime.UtcNow).Days;
                 metadata["cert_subject"] = _capturedCert.Subject;
                 metadata["cert_issuer"] = _capturedCert.Issuer;
                 metadata["cert_expiry"] = _capturedCert.NotAfter.ToString("O");
-                metadata["cert_days_remaining"] = (_capturedCert.NotAfter - DateTime.UtcNow).Days;
+                metadata["cert_days_remaining"] = daysRemaining;
                 metadata["cert_thumbprint"] = _capturedCert.Thumbprint;
+                metadata["cert_valid"] = daysRemaining > 0 ? 1 : 0;
             }
 
             var certDaysRemaining = _capturedCert is not null

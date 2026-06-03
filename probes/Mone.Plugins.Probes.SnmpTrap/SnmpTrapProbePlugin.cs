@@ -25,6 +25,20 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
 
     public Task InitializeAsync(IPluginContext context) => Task.CompletedTask;
 
+    public Task<IReadOnlyList<MetricDeclaration>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MetricDeclaration> metrics =
+        [
+            new MetricDeclaration("trap_received", "Trap received", null,
+                new Dictionary<double, string> { [0] = "Parse failed", [1] = "Received" }),
+            new MetricDeclaration("variable_count", "Variable bindings", null),
+            new MetricDeclaration("generic_trap", "Generic trap code"),
+            new MetricDeclaration("specific_trap", "Specific trap code"),
+            new MetricDeclaration("timestamp", "Agent timestamp", "ticks"),
+        ];
+        return Task.FromResult(metrics);
+    }
+
     public Task<ProbeResult> ExecuteAsync(string targetId, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("SnmpTrap is a passive UDP probe — use HandleDatagramAsync instead of ExecuteAsync.");
@@ -47,6 +61,7 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
             sw.Stop();
             var errorMetadata = new Dictionary<string, object>
             {
+                ["trap_received"] = 0,
                 ["error"] = ex.Message,
                 ["datagram_length"] = datagram.Length,
                 ["remote_endpoint"] = remoteEndpoint.ToString(),
@@ -82,6 +97,7 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
 
         var metadata = new Dictionary<string, object>
         {
+            ["trap_received"] = 1,
             ["snmp_version"] = version.ToString(),
             ["community"] = msg.Parameters.UserName.ToString(),
             ["pdu_type"] = pdu.TypeCode.ToString(),

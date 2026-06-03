@@ -39,6 +39,19 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<MetricDeclaration>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MetricDeclaration> metrics =
+        [
+            new MetricDeclaration("success", "Reachable", null,
+                new Dictionary<double, string> { [0] = "Failure", [1] = "Success" }),
+            new MetricDeclaration("latency_ms", "Round-trip latency", "ms"),
+            new MetricDeclaration("ttl", "Reply TTL"),
+            new MetricDeclaration("buffer_size", "ICMP payload size", "B"),
+        ];
+        return Task.FromResult(metrics);
+    }
+
     public async Task<ProbeResult> ExecuteAsync(string targetId, CancellationToken cancellationToken)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -53,6 +66,7 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
 
             var metadata = new Dictionary<string, object>
             {
+                ["success"] = reply.Status == IPStatus.Success ? 1 : 0,
                 ["latency_ms"] = reply.RoundtripTime,
                 ["ttl"] = reply.Options?.Ttl ?? -1,
                 ["buffer_size"] = _bufferSize,
@@ -81,7 +95,7 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
                 $"Ping unavailable on this platform: {ex.Message}",
                 DateTimeOffset.UtcNow,
                 sw.Elapsed,
-                new Dictionary<string, object> { ["error"] = ex.Message });
+                new Dictionary<string, object> { ["success"] = 0, ["error"] = ex.Message });
         }
         catch (System.Net.Sockets.SocketException ex) when (ex.SocketErrorCode == System.Net.Sockets.SocketError.AccessDenied)
         {
@@ -91,7 +105,7 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
                 $"Ping requires elevated privileges (CAP_NET_RAW on Linux): {ex.Message}",
                 DateTimeOffset.UtcNow,
                 sw.Elapsed,
-                new Dictionary<string, object> { ["error"] = ex.Message, ["hint"] = "setcap cap_net_raw+ep on the binary or run as root" });
+                new Dictionary<string, object> { ["success"] = 0, ["error"] = ex.Message, ["hint"] = "setcap cap_net_raw+ep on the binary or run as root" });
         }
         catch (InvalidOperationException ex)
         {
@@ -101,7 +115,7 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
                 $"Ping failed for {targetId}: {ex.Message}",
                 DateTimeOffset.UtcNow,
                 sw.Elapsed,
-                new Dictionary<string, object> { ["error"] = ex.Message });
+                new Dictionary<string, object> { ["success"] = 0, ["error"] = ex.Message });
         }
     }
 }

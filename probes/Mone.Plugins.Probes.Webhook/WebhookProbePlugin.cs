@@ -31,6 +31,17 @@ public sealed class WebhookProbePlugin : IPassiveProbePlugin, IConfigurablePlugi
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<MetricDeclaration>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MetricDeclaration> metrics =
+        [
+            new MetricDeclaration("accepted", "Payload accepted", null,
+                new Dictionary<double, string> { [0] = "Rejected", [1] = "Accepted" }),
+            new MetricDeclaration("payload_size_bytes", "Payload size", "B"),
+        ];
+        return Task.FromResult(metrics);
+    }
+
     public Task<ProbeResult> ExecuteAsync(string targetId, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("Webhook is a passive probe — use HandleAsync via the HTTP endpoint instead of ExecuteAsync.");
@@ -47,6 +58,7 @@ public sealed class WebhookProbePlugin : IPassiveProbePlugin, IConfigurablePlugi
             sw.Stop();
             var rejectMetadata = new Dictionary<string, object>
             {
+                ["accepted"] = 0,
                 ["payload_size_bytes"] = payloadSizeBytes,
                 ["max_payload_size_bytes"] = _maxPayloadSize,
                 ["received_at"] = DateTimeOffset.UtcNow.ToString("O")
@@ -64,6 +76,7 @@ public sealed class WebhookProbePlugin : IPassiveProbePlugin, IConfigurablePlugi
 
         var metadata = new Dictionary<string, object>
         {
+            ["accepted"] = 1,
             ["payload"] = payload,
             ["payload_size_bytes"] = payloadSizeBytes,
             ["received_at"] = DateTimeOffset.UtcNow.ToString("O")
