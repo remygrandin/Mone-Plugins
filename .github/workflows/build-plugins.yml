@@ -19,20 +19,20 @@ jobs:
 
     steps:
       - name: Checkout Mone-Plugins
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: Mone-Plugins
           fetch-depth: 0
 
       - name: Checkout Mone (sibling, provides Mone.Contracts ProjectReference)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: remygrandin/Mone
           path: Mone
           ref: main
 
       - name: Setup .NET 10 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
@@ -54,7 +54,7 @@ jobs:
         run: bash .github/scripts/build-plugins.sh
 
       - name: Publish release "latest"
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: Latest plugin build
