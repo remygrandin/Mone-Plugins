@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # Build every plugin csproj under probes/, checkers/, notifications/,
-# publish each as a self-contained zip into ./dist/, and regenerate
-# plugin-manifest.json at the repo root.
+# publish each as a self-contained zip into ./dist/, and write
+# dist/mone-plugins.json — the per-release manifest asset consumed
+# by Mone's PluginRepositoryService.
 #
 # Inputs (env):
-#   BUILD_NUMBER  CI run number; appended as `-ci.<n>` suffix to plugin version
+#   BUILD_NUMBER  CI run number; appended as `-ci.<n>` to the plugin version,
+#                 and used as the GitHub Release tag (build-<n>) for downloadUrl.
 #   GIT_SHA       commit being built (recorded in manifest metadata)
 #   REPO_URL      https URL of the plugins repo (used to build release downloadUrl)
 #
@@ -14,11 +16,12 @@ set -euo pipefail
 BUILD_NUMBER="${BUILD_NUMBER:-0}"
 GIT_SHA="${GIT_SHA:-unknown}"
 REPO_URL="${REPO_URL:-https://github.com/remygrandin/Mone-Plugins}"
+RELEASE_TAG="build-${BUILD_NUMBER}"
 
 ROOT="$(pwd)"
 DIST_DIR="$ROOT/dist"
 WORK_DIR="$DIST_DIR/.work"
-MANIFEST="$ROOT/plugin-manifest.json"
+MANIFEST="$DIST_DIR/mone-plugins.json"
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR" "$WORK_DIR"
@@ -74,7 +77,9 @@ package_plugin() {
     --no-restore \
     --nologo \
     --no-self-contained \
-    --output "$publish_dir"
+    --output "$publish_dir" \
+    -p:Version="${base_version}" \
+    -p:InformationalVersion="${version}"
 
   # Drop framework reference assemblies that may leak into publish output;
   # plugins are loaded into the host's shared runtime.
@@ -88,7 +93,7 @@ package_plugin() {
   sha="$(sha256sum "$zip_path" | awk '{print $1}')"
   local size
   size="$(stat -c%s "$zip_path")"
-  local download_url="${REPO_URL}/releases/download/latest/${zip_name}"
+  local download_url="${REPO_URL}/releases/download/${RELEASE_TAG}/${zip_name}"
 
   jq -n \
     --arg name "$display_name" \
@@ -125,21 +130,21 @@ for csproj in notifications/*/*.csproj; do
   package_plugin "$csproj" "AlertChannel"
 done
 
-# Compose manifest. We deliberately write `null` fields so consumers see the full
-# schema; PluginRepositoryService treats omitted/null fields as optional.
+# Compose manifest. Top-level metadata about the build itself (commit, tag,
+# generated time) lives on the GitHub Release. The asset only carries data
+# about the plugins themselves.
 jq -s \
   --arg generatedAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --arg releaseTag "$RELEASE_TAG" \
   --arg commit "$GIT_SHA" \
-  --argjson buildNumber "$BUILD_NUMBER" \
-  --arg repository "$REPO_URL" \
   '{
+    schemaVersion: 1,
     generatedAt: $generatedAt,
+    releaseTag: $releaseTag,
     commit: $commit,
-    buildNumber: $buildNumber,
-    repository: $repository,
     plugins: (. | sort_by(.pluginType, .name))
   }' "$entries_file" > "$MANIFEST"
 
 rm -rf "$WORK_DIR"
 
-echo "Wrote $(jq '.plugins | length' "$MANIFEST") plugins to plugin-manifest.json"
+echo "Wrote $(jq '.plugins | length' "$MANIFEST") plugins to $MANIFEST"
