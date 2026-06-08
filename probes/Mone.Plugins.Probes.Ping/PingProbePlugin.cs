@@ -47,7 +47,6 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
                 new Dictionary<double, string> { [0] = "Failure", [1] = "Success" }),
             new MetricDeclaration("latency_ms", "Round-trip latency", "ms"),
             new MetricDeclaration("ttl", "Reply TTL"),
-            new MetricDeclaration("buffer_size", "ICMP payload size", "B"),
         ];
         return Task.FromResult(metrics);
     }
@@ -69,7 +68,6 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
                 ["success"] = reply.Status == IPStatus.Success ? 1 : 0,
                 ["latency_ms"] = reply.RoundtripTime,
                 ["ttl"] = reply.Options?.Ttl ?? -1,
-                ["buffer_size"] = _bufferSize,
                 ["address"] = reply.Address?.ToString() ?? targetId,
                 ["ip_status"] = reply.Status.ToString()
             };
