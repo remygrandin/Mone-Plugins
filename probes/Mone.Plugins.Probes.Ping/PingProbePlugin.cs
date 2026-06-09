@@ -69,7 +69,9 @@ public sealed class PingProbePlugin : IProbePlugin, IConfigurablePlugin
                 ["latency_ms"] = reply.RoundtripTime,
                 ["ttl"] = reply.Options?.Ttl ?? -1,
                 ["address"] = reply.Address?.ToString() ?? targetId,
-                ["ip_status"] = reply.Status.ToString()
+                ["ip_status"] = reply.Status.ToString(),
+                ["buffer_size"] = $"{_bufferSize} B",
+                ["timeout"] = $"{_timeoutMs} ms"
             };
 
             var status = reply.Status switch
