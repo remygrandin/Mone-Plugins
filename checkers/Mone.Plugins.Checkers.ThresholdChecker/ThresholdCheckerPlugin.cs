@@ -30,7 +30,7 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
         ]
     };
     public string Name => "ThresholdChecker";
-    public Version Version => new(1, 2, 0);
+    public Version Version => new(1, 3, 0);
     public string Description => "Evaluates numeric probe metrics against configurable warning/critical thresholds with optional sustain conditions";
     public CheckerInvocationMode InvocationMode => CheckerInvocationMode.OnProbeResult;
     public TimeSpan? Interval => null;
@@ -78,13 +78,15 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
         return Task.CompletedTask;
     }
 
-    public async Task<StatusChange> EvaluateAsync(CheckerEvaluationContext context)
+    public async Task<StatusChange?> EvaluateAsync(CheckerEvaluationContext context)
     {
         var triggering = context.TriggeringResult
             ?? throw new InvalidOperationException(
                 "ThresholdChecker requires a triggering probe result (OnProbeResult mode)");
 
-        var evaluated = EvaluateStatus(triggering);
+        if (EvaluateStatus(triggering) is not { } evaluated)
+            return null;
+
         var effective = await ApplySustainAsync(context, triggering, evaluated);
 
         return new StatusChange(
@@ -155,7 +157,7 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
                 : new PendingBreach(status, 1, timestamp));
     }
 
-    private MonitoringStatus EvaluateStatus(ProbeResult result)
+    private MonitoringStatus? EvaluateStatus(ProbeResult result)
     {
         if (_metricKey is not null
             && result.Metadata is not null
@@ -172,7 +174,7 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
             };
         }
 
-        return MapProbeStatus(result.Status);
+        return null;
     }
 
     private MonitoringStatus EvaluateGreaterThan(double value)
@@ -201,16 +203,6 @@ public sealed class ThresholdCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
         if (value != _warningThreshold) return MonitoringStatus.Degraded;
         return MonitoringStatus.Healthy;
     }
-
-    private static MonitoringStatus MapProbeStatus(MonitoringStatus probeStatus) =>
-        probeStatus switch
-        {
-            MonitoringStatus.Healthy => MonitoringStatus.Healthy,
-            MonitoringStatus.Degraded => MonitoringStatus.Degraded,
-            MonitoringStatus.Unhealthy => MonitoringStatus.Unhealthy,
-            MonitoringStatus.Unreachable => MonitoringStatus.Unreachable,
-            _ => MonitoringStatus.Unknown
-        };
 
     private static bool TryParseDouble(object raw, out double value)
     {

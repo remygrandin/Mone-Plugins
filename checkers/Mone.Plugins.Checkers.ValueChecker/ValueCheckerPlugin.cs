@@ -24,7 +24,7 @@ public sealed class ValueCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
     };
 
     public string Name => "ValueChecker";
-    public Version Version => new(1, 1, 0);
+    public Version Version => new(1, 2, 0);
     public string Description => "Checks a probe metadata value for string equality against an expected value with optional sustain conditions";
     public CheckerInvocationMode InvocationMode => CheckerInvocationMode.OnProbeResult;
     public TimeSpan? Interval => null;
@@ -73,13 +73,15 @@ public sealed class ValueCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
         return Task.CompletedTask;
     }
 
-    public async Task<StatusChange> EvaluateAsync(CheckerEvaluationContext context)
+    public async Task<StatusChange?> EvaluateAsync(CheckerEvaluationContext context)
     {
         var triggering = context.TriggeringResult
             ?? throw new InvalidOperationException(
                 "ValueChecker requires a triggering probe result (OnProbeResult mode)");
 
-        var evaluated = EvaluateStatus(triggering);
+        if (EvaluateStatus(triggering) is not { } evaluated)
+            return null;
+
         var effective = await ApplySustainAsync(context, triggering, evaluated);
 
         return new StatusChange(
@@ -150,13 +152,13 @@ public sealed class ValueCheckerPlugin : ICheckerPlugin, IConfigurablePlugin
                 : new PendingBreach(status, 1, timestamp));
     }
 
-    private MonitoringStatus EvaluateStatus(ProbeResult result)
+    private MonitoringStatus? EvaluateStatus(ProbeResult result)
     {
         if (_metricKey is null
             || result.Metadata is null
             || !result.Metadata.TryGetValue(_metricKey, out var raw))
         {
-            return _failureStatus;
+            return null;
         }
 
         var actual = raw?.ToString() ?? "";
