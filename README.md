@@ -8,9 +8,16 @@ plugin zips and a `mone-plugins.json` asset describing them. Mone's
 release's `mone-plugins.json`, and surfaces every version in the dashboard so
 users can install or pin any published build.
 
+## Documentation
+
+[`docs/`](docs/README.md) documents every plugin in this repo — a main index plus
+one page per plugin describing how it works, its parameters, the metrics it
+emits, and how results map to a monitoring status.
+
 ## Layout
 
 ```
+docs/          Per-plugin documentation (start at docs/README.md)
 probes/        Active and passive probes (Ping, Https, Webhook, Syslog, SnmpTrap)
 checkers/      Threshold/value evaluators run against probe results
 notifications/ Alert channels (Email, Slack, Teams, Webhook)
