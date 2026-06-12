@@ -1,5 +1,6 @@
 using System.Net;
 using Mone.Contracts.Models;
+using Mone.Contracts.Plugins;
 using Mone.Plugins.Probes.SnmpTrap;
 using Xunit;
 
@@ -42,26 +43,24 @@ public class SnmpTrapProbePluginTests
 
         Assert.Equal("SnmpTrap", plugin.Name);
         Assert.Equal(new Version(1, 0, 0), plugin.Version);
-        Assert.Equal(ProbeMode.Passive, plugin.ProbeMode);
-        Assert.Equal(InstantiationMode.Batch, plugin.InstantiationMode);
-        Assert.Equal(162, plugin.UdpPort);
+        Assert.Equal(PassiveProtocol.Udp, plugin.Protocol);
+        Assert.Equal(162, plugin.Port);
     }
 
     [Fact]
     public async Task ExecuteAsync_ThrowsNotSupported()
     {
-        var plugin = new SnmpTrapProbePlugin();
+        IProbePlugin plugin = new SnmpTrapProbePlugin();
         await Assert.ThrowsAsync<NotSupportedException>(
             () => plugin.ExecuteAsync("target", CancellationToken.None));
     }
 
     [Fact]
-    public async Task HandleDatagramAsync_V2cTrap_ReturnsHealthyWithMetadata()
+    public void ParseDatagram_V2cTrap_ReturnsHealthyWithMetadata()
     {
-        var plugin = new SnmpTrapProbePlugin();
         var datagram = new ReadOnlyMemory<byte>(V2cTrapBytes);
 
-        var result = await plugin.HandleDatagramAsync(datagram, TestEndpoint, CancellationToken.None);
+        var result = SnmpTrapProbePlugin.ParseDatagram(datagram, TestEndpoint);
 
         Assert.Equal(MonitoringStatus.Healthy, result.Status);
         Assert.Contains("SNMP", result.Summary);
@@ -77,17 +76,14 @@ public class SnmpTrapProbePluginTests
     }
 
     [Fact]
-    public async Task HandleDatagramAsync_V2cTrap_ExtractsVarbinds()
+    public void ParseDatagram_V2cTrap_ExtractsVarbinds()
     {
-        var plugin = new SnmpTrapProbePlugin();
         var datagram = new ReadOnlyMemory<byte>(V2cTrapBytes);
 
-        var result = await plugin.HandleDatagramAsync(datagram, TestEndpoint, CancellationToken.None);
+        var result = SnmpTrapProbePlugin.ParseDatagram(datagram, TestEndpoint);
 
         Assert.NotNull(result.Metadata);
 
-        // The V2c trap bytes may not parse correctly with SharpSnmpLib if the BER
-        // encoding isn't valid — check if we got a successful parse first
         Assert.Equal(MonitoringStatus.Healthy, result.Status);
         Assert.True(result.Metadata!.ContainsKey("variable_bindings"));
         var varbinds = Assert.IsType<List<Dictionary<string, string>>>(result.Metadata["variable_bindings"]);
@@ -102,12 +98,11 @@ public class SnmpTrapProbePluginTests
     }
 
     [Fact]
-    public async Task HandleDatagramAsync_MalformedData_ReturnsUnknown()
+    public void ParseDatagram_MalformedData_ReturnsUnknown()
     {
-        var plugin = new SnmpTrapProbePlugin();
         var datagram = new ReadOnlyMemory<byte>([0x01, 0x02, 0x03, 0xFF, 0xFE]);
 
-        var result = await plugin.HandleDatagramAsync(datagram, TestEndpoint, CancellationToken.None);
+        var result = SnmpTrapProbePlugin.ParseDatagram(datagram, TestEndpoint);
 
         Assert.Equal(MonitoringStatus.Unknown, result.Status);
         Assert.Contains("Failed to parse", result.Summary);
@@ -117,36 +112,33 @@ public class SnmpTrapProbePluginTests
     }
 
     [Fact]
-    public async Task HandleDatagramAsync_EmptyData_ReturnsUnknown()
+    public void ParseDatagram_EmptyData_ReturnsUnknown()
     {
-        var plugin = new SnmpTrapProbePlugin();
         var datagram = new ReadOnlyMemory<byte>(Array.Empty<byte>());
 
-        var result = await plugin.HandleDatagramAsync(datagram, TestEndpoint, CancellationToken.None);
+        var result = SnmpTrapProbePlugin.ParseDatagram(datagram, TestEndpoint);
 
         // Empty data should either fail to parse or return unknown
         Assert.Equal(MonitoringStatus.Unknown, result.Status);
     }
 
     [Fact]
-    public async Task HandleDatagramAsync_CommunityString_Extracted()
+    public void ParseDatagram_CommunityString_Extracted()
     {
-        var plugin = new SnmpTrapProbePlugin();
         var datagram = new ReadOnlyMemory<byte>(V2cTrapBytes);
 
-        var result = await plugin.HandleDatagramAsync(datagram, TestEndpoint, CancellationToken.None);
+        var result = SnmpTrapProbePlugin.ParseDatagram(datagram, TestEndpoint);
 
         Assert.NotNull(result.Metadata);
         Assert.Equal("public", result.Metadata!["community"]);
     }
 
     [Fact]
-    public async Task HandleDatagramAsync_IncludesRemoteEndpoint()
+    public void ParseDatagram_IncludesRemoteEndpoint()
     {
-        var plugin = new SnmpTrapProbePlugin();
         var datagram = new ReadOnlyMemory<byte>(V2cTrapBytes);
 
-        var result = await plugin.HandleDatagramAsync(datagram, TestEndpoint, CancellationToken.None);
+        var result = SnmpTrapProbePlugin.ParseDatagram(datagram, TestEndpoint);
 
         Assert.NotNull(result.Metadata);
         Assert.Equal(TestEndpoint.ToString(), result.Metadata!["remote_endpoint"]);

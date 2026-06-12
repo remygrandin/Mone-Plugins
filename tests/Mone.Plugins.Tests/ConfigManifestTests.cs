@@ -52,8 +52,9 @@ public class ConfigManifestTests
         var plugin = new WebhookProbePlugin();
         var manifest = GetManifest(plugin);
 
-        Assert.Single(manifest.Fields);
+        Assert.Equal(2, manifest.Fields.Count);
         AssertField(manifest, "MaxPayloadSize", ConfigFieldType.Integer, required: false);
+        AssertField(manifest, "webhook_secret", ConfigFieldType.Secret, required: false);
     }
 
     [Fact]

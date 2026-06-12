@@ -1,27 +1,34 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using Lextm.SharpSnmpLib;
 using Lextm.SharpSnmpLib.Messaging;
 using Lextm.SharpSnmpLib.Security;
 using Mone.Contracts.Models;
 using Mone.Contracts.Plugins;
-using Mone.Contracts.Plugins.Attributes;
 
 namespace Mone.Plugins.Probes.SnmpTrap;
 
-[ProbePlugin(ProbeMode = ProbeMode.Passive, InstantiationMode = InstantiationMode.Batch)]
-public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
+/// <summary>
+/// Passive SNMP trap receiver. Owns its own UDP socket bound to <c>:162</c>, decodes each datagram as
+/// a v1/v2c trap PDU via SharpSnmpLib, resolves the assignment whose host address matches the sender,
+/// and publishes a result through the executor-provided host (which spools when NATS is down).
+/// </summary>
+public sealed class SnmpTrapProbePlugin : IPassiveProbePlugin, IConfigurablePlugin
 {
-    public ConfigManifest GetConfigManifest() => new()
-    {
-        Fields = []
-    };
+    public const int ListenPort = 162;
+
+    private UdpClient? _socket;
+    private Task? _receiveLoop;
+    private IPassiveProbeHost? _host;
+
     public string Name => "SnmpTrap";
     public Version Version => new(1, 0, 0);
     public string Description => "Passive UDP SNMP trap receiver — decodes v1/v2c trap PDUs via SharpSnmpLib";
-    public ProbeMode ProbeMode => ProbeMode.Passive;
-    public InstantiationMode InstantiationMode => InstantiationMode.Batch;
-    public int UdpPort => 162;
+    public PassiveProtocol Protocol => PassiveProtocol.Udp;
+    public int Port => ListenPort;
+
+    public ConfigManifest GetConfigManifest() => new() { Fields = [] };
 
     public Task InitializeAsync(IPluginContext context) => Task.CompletedTask;
 
@@ -39,15 +46,59 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
         return Task.FromResult(metrics);
     }
 
-    public Task<ProbeResult> ExecuteAsync(string targetId, CancellationToken cancellationToken)
+    public Task StartAsync(IPassiveProbeHost host, CancellationToken cancellationToken)
     {
-        throw new NotSupportedException("SnmpTrap is a passive UDP probe — use HandleDatagramAsync instead of ExecuteAsync.");
+        _host = host;
+        _socket = new UdpClient(new IPEndPoint(IPAddress.Any, ListenPort));
+        _receiveLoop = Task.Run(() => ReceiveLoopAsync(cancellationToken), cancellationToken);
+        return Task.CompletedTask;
     }
 
-    public Task<ProbeResult> HandleDatagramAsync(
-        ReadOnlyMemory<byte> datagram,
-        IPEndPoint remoteEndpoint,
-        CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        try { _socket?.Close(); } catch { /* already closing */ }
+        if (_receiveLoop is not null)
+        {
+            try { await _receiveLoop; } catch (OperationCanceledException) { /* shutting down */ }
+        }
+        _socket?.Dispose();
+    }
+
+    private async Task ReceiveLoopAsync(CancellationToken ct)
+    {
+        var socket = _socket!;
+        while (!ct.IsCancellationRequested)
+        {
+            UdpReceiveResult received;
+            try
+            {
+                received = await socket.ReceiveAsync(ct);
+            }
+            catch (Exception) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (SocketException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+
+            var assignment = _host!.Assignments.FirstOrDefault(a =>
+                string.Equals(a.HostAddress, received.RemoteEndPoint.Address.ToString(), StringComparison.OrdinalIgnoreCase));
+            if (assignment is null)
+                continue;
+
+            var result = ParseDatagram(received.Buffer, received.RemoteEndPoint);
+            await _host.PublishResultAsync(assignment.HostId.ToString(), result, ct);
+        }
+    }
+
+    /// <summary>Decode an SNMP trap datagram into a result. Pure — no I/O, no socket state.</summary>
+    internal static ProbeResult ParseDatagram(ReadOnlyMemory<byte> datagram, IPEndPoint remoteEndpoint)
     {
         var sw = Stopwatch.StartNew();
 
@@ -68,18 +119,18 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
                 ["received_at"] = DateTimeOffset.UtcNow.ToString("O")
             };
 
-            return Task.FromResult(new ProbeResult(
+            return new ProbeResult(
                 MonitoringStatus.Unknown,
                 $"Failed to parse SNMP trap from {remoteEndpoint}: {ex.Message}",
                 DateTimeOffset.UtcNow,
                 sw.Elapsed,
-                errorMetadata));
+                errorMetadata);
         }
 
         if (messages.Count == 0)
         {
             sw.Stop();
-            return Task.FromResult(new ProbeResult(
+            return new ProbeResult(
                 MonitoringStatus.Unknown,
                 $"Empty SNMP message from {remoteEndpoint}",
                 DateTimeOffset.UtcNow,
@@ -88,7 +139,7 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
                 {
                     ["remote_endpoint"] = remoteEndpoint.ToString(),
                     ["received_at"] = DateTimeOffset.UtcNow.ToString("O")
-                }));
+                });
         }
 
         var msg = messages[0];
@@ -139,11 +190,11 @@ public sealed class SnmpTrapProbePlugin : IPassiveUdpPlugin, IConfigurablePlugin
 
         var summary = $"SNMP {version} trap from {remoteEndpoint}: OID {trapOid}, {variables.Count} varbind(s)";
 
-        return Task.FromResult(new ProbeResult(
+        return new ProbeResult(
             MonitoringStatus.Healthy,
             summary,
             DateTimeOffset.UtcNow,
             sw.Elapsed,
-            metadata));
+            metadata);
     }
 }

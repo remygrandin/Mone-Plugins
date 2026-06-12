@@ -6,24 +6,28 @@ Passive UDP SNMP trap receiver — decodes SNMP v1/v2c trap PDUs using
 - **Plugin name:** `SnmpTrap`
 - **Version:** 1.0.0
 - **Kind:** Probe (passive)
-- **Probe mode:** Passive (`IPassiveUdpPlugin`)
-- **Instantiation:** Batch (a single instance handles datagrams for all targets)
-- **UDP port:** `162`
+- **Probe mode:** Passive (`IPassiveProbePlugin`)
+- **Protocol / port:** UDP `162`
 
 ## How it works
 
-The Probe Executor opens UDP port `162` and forwards each received datagram to
-`HandleDatagramAsync`. The plugin parses the bytes with `MessageFactory` and
-inspects the first SNMP message: it records the SNMP version, community/user
-name, and PDU type, then enumerates the variable bindings (OID, type, value). For
-v1 traps it additionally extracts the enterprise OID, agent address, generic and
-specific trap codes, and the agent timestamp.
+The plugin owns its own `UdpClient` bound to UDP `162`. For each datagram it
+matches the sender's address against its assignments; if a host matches, it parses
+the bytes with `MessageFactory` and inspects the first SNMP message: it records
+the SNMP version, community/user name, and PDU type, then enumerates the variable
+bindings (OID, type, value). For v1 traps it additionally extracts the enterprise
+OID, agent address, generic and specific trap codes, and the agent timestamp.
+Results are published through the executor's spooling sink, so they survive a NATS
+outage.
 
 A successfully received trap is always reported as `Healthy` — the plugin's job is
 to capture the trap, not to judge its contents. Use a downstream checker (e.g.
 [ValueChecker](../checkers/value-checker.md)) to alert on specific trap values.
 
-Being a batch passive probe, it has no schedule and `ExecuteAsync` throws.
+The executor's only responsibility is to ensure no two passive plugins bind the
+same `(protocol, port)`; the plugin does all hosting and decoding itself.
+
+Being a passive probe, it has no schedule and `ExecuteAsync` throws.
 
 ## Parameters
 

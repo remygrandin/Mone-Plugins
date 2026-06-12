@@ -15,7 +15,7 @@ Mone has three plugin kinds, each consumed by a different service:
 
 | Kind | Interface | Service | Role |
 |------|-----------|---------|------|
-| **Probe** | `IProbePlugin` / `IPassiveProbePlugin` / `IPassiveUdpPlugin` | Probe Executor | Collect data from a target — actively polling, or passively receiving pushes (webhook / UDP). Publishes a `ProbeResult` to NATS `probes.results.*`. |
+| **Probe** | `IProbePlugin` / `IPassiveProbePlugin` | Probe Executor | Collect data from a target — actively polling, or passively receiving pushes (a passive probe owns its own TCP/UDP listener). Publishes a `ProbeResult` to NATS `probes.results.*`. |
 | **Checker** | `ICheckerPlugin` | Checker Engine | Evaluate probe results against rules and emit a `StatusChange` on NATS `status.changes.*`. |
 | **Notification** | `INotificationPlugin` | Alert Engine | Deliver an alert to an external system when a status changes. |
 

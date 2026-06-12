@@ -7,23 +7,20 @@ namespace Mone.Plugins.Tests;
 
 public class WebhookProbePluginTests
 {
-    private static IPluginContext CreateContext(Dictionary<string, string>? config = null)
+    private const long DefaultMax = WebhookProbePlugin.DefaultMaxPayloadSize;
+
+    [Fact]
+    public void Protocol_IsTcp()
     {
-        return new StubPluginContext("webhook-test", config ?? new Dictionary<string, string>());
+        var plugin = new WebhookProbePlugin();
+        Assert.Equal(PassiveProtocol.Tcp, plugin.Protocol);
     }
 
     [Fact]
-    public void ProbeMode_IsPassive()
+    public void Port_IsListenPort()
     {
         var plugin = new WebhookProbePlugin();
-        Assert.Equal(ProbeMode.Passive, plugin.ProbeMode);
-    }
-
-    [Fact]
-    public void InstantiationMode_IsPerTarget()
-    {
-        var plugin = new WebhookProbePlugin();
-        Assert.Equal(InstantiationMode.PerTarget, plugin.InstantiationMode);
+        Assert.Equal(WebhookProbePlugin.ListenPort, plugin.Port);
     }
 
     [Fact]
@@ -41,30 +38,18 @@ public class WebhookProbePluginTests
     }
 
     [Fact]
-    public void EndpointPath_ReturnsExpectedValue()
-    {
-        var plugin = new WebhookProbePlugin();
-        Assert.Equal("/api/webhooks", plugin.EndpointPath);
-    }
-
-    [Fact]
     public async Task ExecuteAsync_ThrowsNotSupportedException()
     {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
+        IProbePlugin plugin = new WebhookProbePlugin();
         await Assert.ThrowsAsync<NotSupportedException>(
             () => plugin.ExecuteAsync("target-1", CancellationToken.None));
     }
 
     [Fact]
-    public async Task HandleAsync_ReturnsHealthyWithMetadata()
+    public void BuildResult_ReturnsHealthyWithMetadata()
     {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
         var payload = """{"event":"deploy","status":"success"}""";
-        var result = await plugin.HandleAsync("target-1", payload, CancellationToken.None);
+        var result = WebhookProbePlugin.BuildResult("target-1", payload, DefaultMax);
 
         Assert.Equal(MonitoringStatus.Healthy, result.Status);
         Assert.NotNull(result.Metadata);
@@ -76,67 +61,45 @@ public class WebhookProbePluginTests
     }
 
     [Fact]
-    public async Task HandleAsync_CalculatesPayloadSizeCorrectly()
+    public void BuildResult_CalculatesPayloadSizeCorrectly()
     {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
-        var payload = "hello";
-        var result = await plugin.HandleAsync("target-1", payload, CancellationToken.None);
-
+        var result = WebhookProbePlugin.BuildResult("target-1", "hello", DefaultMax);
         Assert.Equal(5, result.Metadata!["payload_size_bytes"]);
     }
 
     [Fact]
-    public async Task HandleAsync_WithMultibyteCharacters_CalculatesByteCount()
+    public void BuildResult_WithMultibyteCharacters_CalculatesByteCount()
     {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
-        // UTF-8: each char is 3 bytes
+        // UTF-8: each char is 2 bytes
         var payload = "ééé";
         var expectedBytes = System.Text.Encoding.UTF8.GetByteCount(payload);
-        var result = await plugin.HandleAsync("target-1", payload, CancellationToken.None);
+        var result = WebhookProbePlugin.BuildResult("target-1", payload, DefaultMax);
 
         Assert.Equal(expectedBytes, result.Metadata!["payload_size_bytes"]);
     }
 
     [Fact]
-    public async Task HandleAsync_ReturnsTimestamp()
+    public void BuildResult_ReturnsTimestamp()
     {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
         var before = DateTimeOffset.UtcNow;
-        var result = await plugin.HandleAsync("target-1", "{}", CancellationToken.None);
+        var result = WebhookProbePlugin.BuildResult("target-1", "{}", DefaultMax);
         var after = DateTimeOffset.UtcNow;
 
         Assert.InRange(result.Timestamp, before, after.AddSeconds(1));
     }
 
     [Fact]
-    public async Task HandleAsync_ReturnsDuration()
+    public void BuildResult_ReturnsDuration()
     {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
-        var result = await plugin.HandleAsync("target-1", "{}", CancellationToken.None);
-
+        var result = WebhookProbePlugin.BuildResult("target-1", "{}", DefaultMax);
         Assert.True(result.Duration >= TimeSpan.Zero);
     }
 
     [Fact]
-    public async Task HandleAsync_OversizedPayload_ReturnsUnhealthy()
+    public void BuildResult_OversizedPayload_ReturnsUnhealthy()
     {
-        var plugin = new WebhookProbePlugin();
-        var context = CreateContext(new Dictionary<string, string>
-        {
-            ["MaxPayloadSize"] = "10"
-        });
-        await plugin.InitializeAsync(context);
-
         var payload = new string('x', 20);
-        var result = await plugin.HandleAsync("target-1", payload, CancellationToken.None);
+        var result = WebhookProbePlugin.BuildResult("target-1", payload, 10);
 
         Assert.Equal(MonitoringStatus.Unhealthy, result.Status);
         Assert.NotNull(result.Metadata);
@@ -147,43 +110,22 @@ public class WebhookProbePluginTests
     }
 
     [Fact]
-    public async Task InitializeAsync_ReadsMaxPayloadSize()
+    public void BuildResult_EmptyPayload_ReturnsHealthy()
     {
-        var plugin = new WebhookProbePlugin();
-        var context = CreateContext(new Dictionary<string, string>
-        {
-            ["MaxPayloadSize"] = "500"
-        });
-
-        await plugin.InitializeAsync(context);
-        // Config applied — verified by the oversized payload test
-    }
-
-    [Fact]
-    public async Task InitializeAsync_IgnoresInvalidMaxPayloadSize()
-    {
-        var plugin = new WebhookProbePlugin();
-        var context = CreateContext(new Dictionary<string, string>
-        {
-            ["MaxPayloadSize"] = "not-a-number"
-        });
-
-        await plugin.InitializeAsync(context);
-        // Falls back to default without error
-
-        var result = await plugin.HandleAsync("target-1", "{}", CancellationToken.None);
-        Assert.Equal(MonitoringStatus.Healthy, result.Status);
-    }
-
-    [Fact]
-    public async Task HandleAsync_EmptyPayload_ReturnsHealthy()
-    {
-        var plugin = new WebhookProbePlugin();
-        await plugin.InitializeAsync(CreateContext());
-
-        var result = await plugin.HandleAsync("target-1", "", CancellationToken.None);
+        var result = WebhookProbePlugin.BuildResult("target-1", "", DefaultMax);
 
         Assert.Equal(MonitoringStatus.Healthy, result.Status);
         Assert.Equal(0, result.Metadata!["payload_size_bytes"]);
+    }
+
+    [Fact]
+    public void ComputeHmacSha256_ProducesStablePrefixedHex()
+    {
+        var signature = WebhookProbePlugin.ComputeHmacSha256("secret", "payload");
+
+        Assert.StartsWith("sha256=", signature);
+        // Deterministic for the same secret/payload
+        Assert.Equal(signature, WebhookProbePlugin.ComputeHmacSha256("secret", "payload"));
+        Assert.NotEqual(signature, WebhookProbePlugin.ComputeHmacSha256("secret", "other"));
     }
 }
